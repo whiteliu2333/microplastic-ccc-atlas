@@ -1,0 +1,43 @@
+{
+  "model_id": "Stacking_GBR750Enhanced_GroupSafe_All6",
+  "target": "log10(CCC) -> CCC (mM)",
+  "rows": 507,
+  "literature_count": 45,
+  "strict_groups": 45,
+  "input_columns": [
+    "阳离子价态 X1",
+    "阴离子类型",
+    "温度℃",
+    "Zeta电位mV X2",
+    "颗粒形态 X3",
+    "PH X4",
+    "塑料表面修饰类型 X5",
+    "塑料种类 X6",
+    "塑料浓度mg/L X7",
+    "初始粒径nm X8",
+    "共存物质种类 X9",
+    "共存物质浓度mg/L X10",
+    "光照时间h X11"
+  ],
+  "base_names": [
+    "RF",
+    "ExtraTrees",
+    "LGBM",
+    "XGB",
+    "GBR",
+    "GBR750"
+  ],
+  "preprocessor_mode": "ScaledKNN_NoIF",
+  "trained_utc": "2026-10-24T08:58:09.967938+00:00",
+  "source_sha256": "3ef98d7357c449a3a03886b8feb3f77a84c3eb4bdd05cc7e606173c250ceaa96",
+  "note": "This is a final model trained on all valid data. Do not interpret training/Meta OOF as a fresh independent test.",
+  "selected_members_from_deployment": [
+    "GBR750",
+    "Meta2:Ridge_a8",
+    "Gate:ExtraTrees"
+  ],
+  "dynamic_gate_expert": "ExtraTrees",
+  "champion_guard_triggered": false,
+  "regime_calibration_enabled": false,
+  "fifth_stage_enabled": false
+}

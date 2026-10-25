@@ -1,0 +1,16 @@
+# Keep your literature data OUT of a public repository.
+Data2.xlsx
+*.xlsx
+*.xls
+*.xlsm
+
+# Local-only artifacts.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# The actual trained model in models/ccc_stacking.joblib MUST be committed.
+# Do NOT ignore *.joblib or models/*.joblib.
