@@ -68,8 +68,8 @@ MAIN_GROUPS = [
             ("塑料种类 X6", "Plastic type", "Select polymer type"),
             ("颗粒形态 X3", "Particle type", "Select particle type"),
             ("塑料表面修饰类型 X5", "Plastic surface modification type", "Select surface modification"),
-            ("Zeta电位mV X2", "Initial Zeta potential (mV)", "Enter value"),
-            ("初始粒径nm X8", "Initial particle size (nm)", "Enter value"),
+            ("Zeta电位mV X2", "Initial Zeta potential (mV) (Recommended value: −35 mV)", "Enter value"),
+            ("初始粒径nm X8", "Initial particle size (nm) (Recommended value: 100 nm)", "Enter value"),
         ],
     ),
     (
@@ -140,6 +140,77 @@ ALIASES = {
 }
 HIDE_CATEGORIES = {"未报告", "未报道", "<missing>", "not reported", "not specified"}
 
+# Virtual UI options. Never feed these sentinel strings into the trained model.
+OTHER_MONOVALENT = "__ccc_other_monovalent__"
+OTHER_DIVALENT = "__ccc_other_divalent__"
+OTHER_ANION = "__ccc_other_anion__"
+OTHER_POLYMER = "__ccc_other_polymer__"
+NONE_NOT_TRAINED = "__ccc_surface_none_not_trained__"
+
+# These are equal-weight alternative experimental scenarios, not arithmetic
+# means of the categorical encodings. The model is run once for each scenario,
+# and predictions in mM are averaged after inverse transformation.
+AVERAGE_OPTIONS = {
+    "\u9633\u79bb\u5b50\u4ef7\u6001 X1": {
+        OTHER_MONOVALENT: ("Na(1)", "K(1)"),
+        OTHER_DIVALENT: ("Ba(2)", "Ca(2)", "Mg(2)"),
+    },
+    "\u9634\u79bb\u5b50\u7c7b\u578b": {
+        OTHER_ANION: None,  # use every supported anion category
+    },
+    "\u5851\u6599\u79cd\u7c7b X6": {
+        OTHER_POLYMER: ("PBAT", "PE", "PET", "PS"),
+    },
+}
+
+OTHER_LABELS = {
+    OTHER_MONOVALENT: "Other (monovalent)",
+    OTHER_DIVALENT: "Other (divalent)",
+    OTHER_ANION: "Other",
+    OTHER_POLYMER: "Other",
+    NONE_NOT_TRAINED: "None (unavailable in model)",
+}
+
+SURFACE_FEATURE = "\u5851\u6599\u8868\u9762\u4fee\u9970\u7c7b\u578b X5"
+SURFACE_UNREPORTED_MARKERS = ("\u672a\u62a5\u544a", "\u672a\u62a5\u9053", "not reported", "not specified", "<missing>")
+
+# Values are based on the 507 rows of Data2.xlsx: zeta median -34 mV,
+# most frequent -37.7 mV; particle-size median/mode 100 nm.
+RECOMMENDED_NUMERIC = {
+    "Zeta\u7535\u4f4dmV X2": "-35 mV",
+    "\u521d\u59cb\u7c92\u5f84nm X8": "100 nm",
+}
+
+SELECT_HELP = {
+    "\u9633\u79bb\u5b50\u4ef7\u6001 X1": (
+        "Other (monovalent): equal-weight mean of Na+ and K+ model predictions. "
+        "Other (divalent): mean of Ba2+, Ca2+, and Mg2+ predictions."
+    ),
+    "\u9634\u79bb\u5b50\u7c7b\u578b": (
+        "Other: equal-weight mean across all anion categories included in the trained model."
+    ),
+    "\u5851\u6599\u79cd\u7c7b X6": (
+        "Other: equal-weight mean of the PBAT, PE, PET, and PS model predictions."
+    ),
+    SURFACE_FEATURE: (
+        "No confirmed unmodified surface samples are present in the source data. "
+        "None uses the model's unreported modification category as an approximation."
+    ),
+}
+
+
+def raw_surface_none_option():
+    """Prefer a real no-modification code, else use the unreported-data proxy."""
+    available = list(bundle["category_options"].get(SURFACE_FEATURE, []))
+    for raw in available:
+        if str(raw).strip().casefold() in {"\u65e0", "none", "unmodified", "no modification"}:
+            return raw, False
+    for marker in SURFACE_UNREPORTED_MARKERS:
+        for raw in available:
+            if str(raw).strip().casefold() == marker.casefold():
+                return raw, True
+    return NONE_NOT_TRAINED, True
+
 
 def ionic_parts(raw: str):
     """Extract ion symbol and valence from Na(1) or 1(Na)."""
@@ -174,6 +245,10 @@ def mass_fraction(raw: str):
 def scientific_display(feature: str, raw_value: str) -> str:
     """Make clean English/math labels without changing the model's X category."""
     raw = str(raw_value).strip()
+    if raw in OTHER_LABELS:
+        return OTHER_LABELS[raw]
+    if feature == SURFACE_FEATURE and raw == str(raw_surface_none_option()[0]):
+        return "None"
     if feature == "阳离子价态 X1":
         element, charge = ionic_parts(raw)
         if charge != 999:
@@ -211,40 +286,105 @@ def scientific_display(feature: str, raw_value: str) -> str:
 
 
 def scientific_sort(feature: str, raw_value: str):
-    """Cations: increasing charge; all others: English A-Z, size fractions low-high."""
-    raw = str(raw_value).strip()
-    shown = scientific_display(feature, raw)
-
-    if feature == "阳离子价态 X1":
-        element, charge = ionic_parts(raw)
-        return (0, charge, element.casefold(), 0)
-
-    if raw == "无":
-        return (-1, 0, "", "")
-
-    # Ensure related molecular-weight fractions stay together in ascending order.
-    fraction = mass_fraction(raw)
-    if fraction:
-        species, _interval, low = fraction
-        return (0, species.casefold(), low, shown.casefold())
-
-    if feature == "阴离子类型":
-        match = re.fullmatch(r"(.+?)\((\d+)\)", raw)
-        if match:
-            return (0, match.group(1).casefold(), int(match.group(2)), "")
-
-    if raw in {"HA", "NOM", "SRHA", "BCHA"}:
-        return (0, raw.casefold(), -2, "")
-
-    return (0, shown.casefold(), -2, "")
+    """Sort display labels A–Z; put Other near the end and None last."""
+    label = scientific_display(feature, raw_value).strip()
+    normalized = label.casefold()
+    is_none = normalized == "none" or normalized.startswith("none (")
+    is_other = normalized == "other" or normalized.startswith("other (")
+    group = 2 if is_none else (1 if is_other else 0)
+    return (group, normalized, str(raw_value).casefold())
 
 
 def option_list(feature: str):
+    """Display normal categories A–Z, followed by Other, then None."""
     allowed = [
         raw for raw in bundle["category_options"][feature]
         if str(raw).strip().casefold() not in HIDE_CATEGORIES
     ]
+
+    # Add virtual UI choices before sorting; Other and None are placed last
+    # without changing the underlying model category codes.
+    if feature == SURFACE_FEATURE:
+        none_raw, _is_proxy = raw_surface_none_option()
+        if none_raw not in allowed:
+            allowed.append(none_raw)
+    elif feature == "\u9633\u79bb\u5b50\u4ef7\u6001 X1":
+        allowed.extend([OTHER_MONOVALENT, OTHER_DIVALENT])
+    elif feature == "\u9634\u79bb\u5b50\u7c7b\u578b":
+        allowed.append(OTHER_ANION)
+    elif feature == "\u5851\u6599\u79cd\u7c7b X6":
+        allowed.append(OTHER_POLYMER)
+
     return sorted(allowed, key=lambda raw: scientific_sort(feature, raw))
+
+
+def expanded_scenarios(row: dict) -> tuple[list[dict], bool]:
+    """Expand each Other option into trained alternatives of equal weight.
+
+    When two or three Other inputs are selected, the Cartesian product is
+    evaluated, then the CCC predictions are averaged in mM, not raw encodings.
+    """
+    scenarios = [dict(row)]
+    for feature, virtual_groups in AVERAGE_OPTIONS.items():
+        selected = row[feature]
+        if selected not in virtual_groups:
+            continue
+        trained = tuple(bundle["category_options"][feature])
+        requested = virtual_groups[selected]
+        if requested is None:
+            # Existing allowed anion options, including rare ions. Exactly
+            # one aggregate Other entry is shown in the UI.
+            requested = tuple(
+                raw for raw in option_list(feature) if raw != OTHER_ANION
+            )
+        missing = [value for value in requested if value not in trained]
+        if missing or not requested:
+            raise ValueError(
+                f"The trained model does not support all categories required "
+                f"for {FIELD_LABELS[feature]} Other: {', '.join(map(str, missing))}."
+            )
+        scenarios = [
+            dict(scenario, **{feature: alternative})
+            for scenario in scenarios
+            for alternative in requested
+        ]
+
+    # A source row tagged 'not reported' does not prove absence of surface
+    # modification. Show that scientific limitation to the user explicitly.
+    source, is_proxy = raw_surface_none_option()
+    if row[SURFACE_FEATURE] == NONE_NOT_TRAINED:
+        raise ValueError(
+            "The trained model contains no unmodified or unreported surface "
+            "category, so a None prediction is not available."
+        )
+    surface_proxy = bool(is_proxy and row[SURFACE_FEATURE] == source)
+    return scenarios, surface_proxy
+
+
+def predict_scenario_average(scenarios: list[dict]) -> float:
+    """Average full-model CCC predictions of equal-weight scenarios in mM."""
+    X = pd.DataFrame(scenarios, columns=COLUMNS)
+    if len(scenarios) == 1:
+        values, _ = predict_ccc(bundle, X)
+        return float(values[0])
+
+    # Standard sklearn-based pipelines support batch prediction. If a custom
+    # predictor happens to support only a single row, fall back to single-row
+    # calls without changing the averaging method.
+    try:
+        predictions, _ = predict_ccc(bundle, X)
+        scores = pd.Series(predictions).astype(float).to_numpy()
+        if len(scores) != len(scenarios):
+            raise ValueError("The model returned an unexpected number of results.")
+    except Exception:
+        scores = []
+        for scenario in scenarios:
+            one = pd.DataFrame([scenario], columns=COLUMNS)
+            values, _ = predict_ccc(bundle, one)
+            scores.append(float(values[0]))
+    if not all(math.isfinite(float(value)) for value in scores):
+        raise ValueError("The model returned a non-finite CCC prediction.")
+    return float(sum(float(value) for value in scores) / len(scores))
 
 
 
@@ -381,8 +521,16 @@ def field_input(feature: str, label: str, placeholder: str):
         tooltip = f"Range: {scientific_number(lower)}~{scientific_number(upper)}"
         if unit:
             tooltip += f" {unit}"
+        # Render only the recommended-value suffix as a separately styled span.
+        # Keep FIELD_LABELS and the actual model feature names unchanged.
+        display_label = label
+        if feature in RECOMMENDED_NUMERIC:
+            recommendation = (
+                f"(Recommended value: {RECOMMENDED_NUMERIC[feature].replace('-', '−')})"
+            )
+            display_label = label.replace(recommendation, f"*{recommendation}*")
         value = st.number_input(
-            label=label,
+            label=display_label,
             value=None,
             placeholder=placeholder,
             min_value=None,
@@ -393,6 +541,16 @@ def field_input(feature: str, label: str, placeholder: str):
             key=field_key(feature),
             on_change=invalidate_prediction,
         )
+
+    if feature == SURFACE_FEATURE and value is not None:
+        source, is_proxy = raw_surface_none_option()
+        if value == source and is_proxy:
+            st.markdown(
+                '<div class="ccc-field-note">'
+                'None is approximated using records with unspecified surface modification.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
     # These helpers re-render on blur, Enter or +/- input commit.
     # They therefore appear immediately after a committed edit without
@@ -463,11 +621,13 @@ def submit_prediction():
                 "coexisting species is None."
             )
 
-        X = pd.DataFrame([row], columns=COLUMNS)
-        ccc_values, _ = predict_ccc(bundle, X)
+        scenarios, surface_proxy = expanded_scenarios(row)
+        ccc_value = predict_scenario_average(scenarios)
         st.session_state["ccc_last_result"] = {
-            "ccc": float(ccc_values[0]),
+            "ccc": ccc_value,
             "out_of_range": out_of_range(row),
+            "averaged_scenarios": len(scenarios),
+            "surface_proxy": surface_proxy,
         }
     except (ValueError, TypeError, KeyError) as exc:
         st.session_state["ccc_prediction_error"] = str(exc)
@@ -492,6 +652,16 @@ def footer_status_html() -> str:
             if result["out_of_range"]
             else ""
         )
+        method = (
+            f'<span class="ccc-result-method">Mean of {result["averaged_scenarios"]} predictions</span>'
+            if result.get("averaged_scenarios", 1) > 1
+            else ""
+        )
+        surface_note = (
+            '<span class="ccc-result-method">Surface proxy</span>'
+            if result.get("surface_proxy")
+            else ""
+        )
         return (
             '<div class="ccc-action-spacer ccc-footer-result" '
             'role="status" aria-live="polite">'
@@ -499,6 +669,8 @@ def footer_status_html() -> str:
             f'<span class="ccc-footer-result-value">{escape(rendered)}'
             '<span class="ccc-footer-result-unit">mM</span></span>'
             + caution
+            + method
+            + surface_note
             + '</div>'
         )
 
@@ -631,6 +803,15 @@ div[data-testid="stColumn"]:has(.ccc-panel-heading) div[data-testid="stVerticalB
   font-size: 15px !important;
   line-height: 1.45 !important;
   font-weight: 550 !important;
+}
+
+/* Muted slate-blue recommendation text: understated against monochrome UI. */
+.st-key-ccc_field_1_3 div[data-testid="stNumberInput"] label p em,
+.st-key-ccc_field_1_4 div[data-testid="stNumberInput"] label p em {
+  font-style: normal !important;
+  color: #68798D !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
 }
 
 /* Full visible input borders, including the idle state. */
@@ -860,6 +1041,18 @@ div[data-testid="stHorizontalBlock"]:has(.ccc-footer-error) > div[data-testid="s
 .st-key-ccc_predict_action button:focus-visible {
   outline: 2px solid #8794A7 !important;
   outline-offset: 2px !important;
+}
+
+/* Only shown when a surface proxy is actually selected. */
+.ccc-field-note {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #8C6D40;
+  padding: 1px 1px 0;
+}
+.ccc-result-method {
+  font-size: 11px;
+  color: #678273;
 }
 
 /* Compact inline validation: red text under the offending field. */
