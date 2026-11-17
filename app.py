@@ -9,6 +9,7 @@ No values are guessed or silently defaulted.
 """
 from __future__ import annotations
 
+import base64
 import math
 import re
 from html import escape
@@ -727,17 +728,30 @@ html, body,
 }
 
 /* Keyed native container: inputs now rerun immediately on committed edits. */
+
 .st-key-ccc_main_card {
   box-sizing: border-box;
-  width: 100%;
-  margin: 4px auto 0;
   padding: 32px 32px 24px;
   background: var(--ccc-white) !important;
   border: 1px solid #E2E7ED !important;
   border-radius: 12px !important;
   box-shadow: 0 8px 26px rgba(23, 33, 47, 0.045);
   overflow: visible;
+
+  /* 固定表格位置 */
+  position: fixed !important;
+  top: 0px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: calc(100% - 44px) !important;
+  max-width: 1436px !important;
+  margin: 0 auto !important;
+  margin-top: 365px !important;
 }
+
+
+
+
 
 /* Three columns with gentle dividers and a shared visual baseline. */
 .st-key-ccc_main_card
@@ -1263,10 +1277,294 @@ div[data-testid="stAlert"] {
     transition: none !important;
   }
 }
+
+/* Scenic layout: transparent form, with the landscape visible above it. */
+.block-container {
+  padding-top: clamp(100px, 15vh, 160px) !important;
+}
+
+.st-key-ccc_main_card {
+  --ccc-rule: rgba(38, 78, 94, 0.18);
+  --ccc-muted: #526679;
+  background: rgba(255, 255, 255, 0.90) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.st-key-ccc_main_card .ccc-panel-heading {
+  border-bottom-color: rgba(38, 78, 94, 0.18) !important;
+}
+
+/* Let the water and landscape show through idle input fields. */
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] [data-baseweb="input"] {
+  background: rgba(255, 255, 255, 0.38) !important;
+  border-color: rgba(53, 90, 112, 0.42) !important;
+}
+
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"] > div:hover,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] [data-baseweb="input"]:hover {
+  background: rgba(255, 255, 255, 0.53) !important;
+  border-color: rgba(53, 90, 112, 0.65) !important;
+}
+
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] [data-baseweb="input"]:focus-within {
+  background: rgba(255, 255, 255, 0.69) !important;
+  border-color: var(--ccc-focus) !important;
+}
+
+.st-key-ccc_main_card div[data-testid="stSelectbox"] input,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] input {
+  background: transparent !important;
+}
+
+.st-key-ccc_main_card [data-baseweb="select"] [data-baseweb="tag"] {
+  background: rgba(255, 255, 255, 0.38) !important;
+}
+
+.st-key-ccc_main_card div[data-testid="stNumberInput"] button {
+  color: #53697A !important;
+}
+
+.st-key-ccc_main_card div[data-testid="stNumberInput"] button:hover {
+  background: rgba(255, 255, 255, 0.48) !important;
+}
+
+/* Preserve readable, opaque dropdown menus while they are open. */
+.st-key-ccc_reset_action button {
+  background: rgba(255, 255, 255, 0.40) !important;
+  border-color: rgba(53, 90, 112, 0.48) !important;
+}
+.st-key-ccc_reset_action button:hover {
+  background: rgba(255, 255, 255, 0.68) !important;
+}
+
+.st-key-ccc_predict_action button {
+  background: rgba(37, 40, 45, 0.85) !important;
+}
+.st-key-ccc_predict_action button:hover {
+  background: rgba(37, 40, 45, 0.95) !important;
+}
+
+.ccc-footer-result {
+  background: rgba(244, 249, 245, 0.86) !important;
+}
+
+/* Keep the landscape visible without excessive blank space on small screens. */
+@media (max-width: 940px) {
+  .block-container {
+    padding-top: clamp(76px, 11vh, 100px) !important;
+  }
+}
+@media (max-width: 520px) {
+  .block-container {
+    padding-top: 76px !important;
+  }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
 )
+
+
+
+# ----------------------------------------------------------------------------
+# FINAL DESKTOP VIEW: fixed-position form, larger readable type, no page scrolling.
+#
+# The screenshot's visual placement is preserved by the same 350px top margin
+# and an approximately 0.88 visual scale (previously auto-computed by JS).
+# Larger fonts and tighter vertical spacing keep the footer visible.
+# ----------------------------------------------------------------------------
+st.markdown(
+    """
+<style>
+/* No artificial 185vh page and no scrollbar inside the white prediction card. */
+html, body,
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"] {
+    overflow-x: hidden !important;
+}
+[data-testid="stMain"] {
+    height: 100dvh !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
+    background-color: #AEE3EC !important;
+    background-image:
+        linear-gradient(180deg, #B7E8FB 0%, #A1E3EF 48%, #B9EAD5 100%) !important;
+    background-size: 100% 100% !important;
+    background-position: center top !important;
+    background-repeat: no-repeat !important;
+}
+[data-testid="stMain"] .block-container {
+    min-height: 100dvh !important;
+}
+
+/* This block retains the user's original fixed position and 350px setting. */
+.st-key-ccc_main_card {
+    position: fixed !important;
+    top: 0px !important;
+    left: 50% !important;
+    margin-top: 365px !important;
+    transform: translateX(-50%) scale(0.88) !important;
+    transform-origin: top center !important;
+    max-height: none !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    z-index: 20 !important;
+    /* Keep the existing white card background, rounding and border styles. */
+    padding: 28px 32px 21px !important;
+}
+
+/* Panel titles: 18px -> 22px */
+.st-key-ccc_main_card .ccc-panel-heading {
+    font-size: 22px !important;
+    line-height: 1.32 !important;
+    padding-bottom: 12px !important;
+    margin-bottom: 3px !important;
+}
+
+/* Keep the same three-column form without growing the card vertically. */
+.st-key-ccc_main_card
+div[data-testid="stColumn"]:has(.ccc-panel-heading)
+div[data-testid="stVerticalBlock"] {
+    gap: 14px !important;
+}
+
+/* Field labels: 15px -> 18px */
+.st-key-ccc_main_card div[data-testid="stSelectbox"] label,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] label {
+    margin-bottom: 5px !important;
+}
+.st-key-ccc_main_card div[data-testid="stSelectbox"] label p,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] label p {
+    font-size: 18px !important;
+    line-height: 1.35 !important;
+    font-weight: 550 !important;
+}
+
+/* Recommended values: 13px -> 15px */
+.st-key-ccc_field_1_3 div[data-testid="stNumberInput"] label p em,
+.st-key-ccc_field_1_4 div[data-testid="stNumberInput"] label p em {
+    font-size: 15px !important;
+}
+
+/* Entered numbers, placeholders and selected options: 14px -> 18px. */
+.st-key-ccc_main_card div[data-testid="stSelectbox"] input,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] input,
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"],
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"] :not(svg):not(path),
+.st-key-ccc_main_card div[data-testid="stNumberInput"] [data-baseweb="input"] input {
+    font-size: 18px !important;
+}
+
+/* The dropdown list renders in an outside portal, so size it separately. */
+[data-baseweb="popover"] [role="option"],
+[data-baseweb="popover"] [role="option"] :not(svg):not(path) {
+    font-size: 17px !important;
+}
+
+/* Buttons: 14px -> 17px. Their original shapes/colours remain unchanged. */
+.st-key-ccc_main_card div[data-testid="stButton"] > button,
+.st-key-ccc_main_card div[data-testid="stButton"] > button p {
+    font-size: 17px !important;
+}
+.ccc-action-divider {
+    margin: 21px 0 11px !important;
+}
+
+/* Keep validation feedback from changing the white card's dimensions.
+   The compact line is drawn in the existing space between field rows. */
+.st-key-ccc_main_card [class*="st-key-ccc_field_"] {
+    position: relative !important;
+}
+.st-key-ccc_main_card [class*="st-key-ccc_field_"]
+div[data-testid="stElementContainer"]:has(.ccc-field-error) {
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: calc(100% + 1px) !important;
+    width: 100% !important;
+    margin: 0 !important;
+    z-index: 2;
+    pointer-events: none;
+}
+.st-key-ccc_main_card .ccc-field-error {
+    font-size: 11px !important;
+    line-height: 1.16 !important;
+    margin: 0 !important;
+}
+.st-key-ccc_main_card div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer) {
+    min-height: 54px !important;
+    align-items: center !important;
+}
+
+/* Keep validation and results legible without excessive vertical spacing. */
+.ccc-field-error, .ccc-field-note {
+    font-size: 13.5px !important;
+    line-height: 1.30 !important;
+}
+.ccc-footer-error, .ccc-footer-result-label,
+.ccc-footer-result-unit, .ccc-result-method {
+    font-size: 14px !important;
+}
+
+/* Do not rescale this card when Predict CCC adds field warnings. */
+
+
+/* Fit smaller laptop windows without changing the 350px top position. */
+@media (max-height: 880px) {
+    .st-key-ccc_main_card {
+        transform: translateX(-50%) scale(0.75) !important;
+    }
+    
+}
+@media (max-height: 740px) {
+    .st-key-ccc_main_card {
+        transform: translateX(-50%) scale(0.56) !important;
+    }
+    
+}
+@media (max-height: 620px) {
+    .st-key-ccc_main_card {
+        transform: translateX(-50%) scale(0.38) !important;
+    }
+    
+}
+
+
+
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+# Keep back.png beside app.py as before. Preserve the screenshot's image zoom.
+BACKGROUND_PATH = ROOT / "back.png"
+if BACKGROUND_PATH.is_file():
+    background_base64 = base64.b64encode(
+        BACKGROUND_PATH.read_bytes()
+    ).decode("ascii")
+    st.markdown(
+        f"""
+<style>
+[data-testid="stMain"] {{
+    background-image:
+        url("data:image/png;base64,{background_base64}"),
+        linear-gradient(180deg, #B7E8FB 0%, #A1E3EF 48%, #B9EAD5 100%) !important;
+    background-size: 112% auto, 100% 100% !important;
+    background-position: center top, center top !important;
+    background-repeat: no-repeat, no-repeat !important;
+    background-attachment: local, local !important;
+}}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 # ----------------------------------------------------------------------------
