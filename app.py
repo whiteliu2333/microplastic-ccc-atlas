@@ -543,34 +543,46 @@ def field_input(feature: str, label: str, placeholder: str):
             on_change=invalidate_prediction,
         )
 
-    if feature == SURFACE_FEATURE and value is not None:
-        source, is_proxy = raw_surface_none_option()
-        if value == source and is_proxy:
-            st.markdown(
-                '<div class="ccc-field-note">'
-                'None is approximated using records with unspecified surface modification.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-    # These helpers re-render on blur, Enter or +/- input commit.
-    # They therefore appear immediately after a committed edit without
-    # requiring the user to click Predict CCC.
+    # A permanent helper slot preserves the original layout height before
+    # and after Predict CCC. Validation remains under the associated input;
+    # it no longer inserts an extra Streamlit block only upon submission.
+    feedback_html = ""
     if st.session_state.get("ccc_attempted") and is_missing(value):
-        st.markdown(
+        feedback_html = (
             '<div class="ccc-field-error" role="alert">'
-            'This field is required.</div>',
-            unsafe_allow_html=True,
+            'This field is required.</div>'
         )
     elif feature in bundle["numeric_columns"]:
         feedback = numeric_field_feedback(feature, value)
         if feedback:
-            st.markdown(
+            content = escape(feedback)
+            if feedback.startswith("Outside training range"):
+                content = content.replace(
+                    "Outside training range",
+                    '<strong class="ccc-range-prefix">Outside training range</strong>',
+                    1,
+                )
+            feedback_html = (
                 '<div class="ccc-field-error" role="alert">'
-                + escape(feedback)
-                + '</div>',
-                unsafe_allow_html=True,
+                + content
+                + '</div>'
             )
+
+    if not feedback_html and feature == SURFACE_FEATURE and value is not None:
+        source, is_proxy = raw_surface_none_option()
+        if value == source and is_proxy:
+            feedback_html = (
+                '<div class="ccc-field-note">'
+                'None is approximated using records with unspecified surface modification.'
+                '</div>'
+            )
+
+    st.markdown(
+        '<div class="ccc-feedback-slot" aria-live="polite">'
+        + feedback_html
+        + '</div>',
+        unsafe_allow_html=True,
+    )
     return value
 
 
@@ -649,7 +661,11 @@ def footer_status_html() -> str:
         ccc = result["ccc"]
         rendered = f"{ccc:,.3f}" if 0.001 <= ccc < 1e7 else f"{ccc:.3e}"
         caution = (
-            '<span class="ccc-result-caution">Outside training range</span>'
+            '<span class="ccc-result-caution">'
+            '<strong class="ccc-caution-prefix">Caution:</strong> '
+            'One or more input values fall outside the training range. '
+            'The prediction involves extrapolation and may be less reliable.'
+            '</span>'
             if result["out_of_range"]
             else ""
         )
@@ -663,15 +679,17 @@ def footer_status_html() -> str:
             if result.get("surface_proxy")
             else ""
         )
+        notes_html = caution + method + surface_note
         return (
             '<div class="ccc-action-spacer ccc-footer-result" '
             'role="status" aria-live="polite">'
+            '<div class="ccc-result-primary">'
             '<span class="ccc-footer-result-label">Predicted CCC</span>'
             f'<span class="ccc-footer-result-value">{escape(rendered)}'
             '<span class="ccc-footer-result-unit">mM</span></span>'
-            + caution
-            + method
-            + surface_note
+            '</div>'
+            + (f'<div class="ccc-result-meta">{notes_html}</div>'
+               if notes_html else '')
             + '</div>'
         )
 
@@ -1135,8 +1153,11 @@ div[data-testid="stElementContainer"]:has(.ccc-field-error) {
 }
 .ccc-result-caution {
   color: #B42318;
-  font-size: 11px;
-  line-height: 1.25;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 550;
+  max-width: 520px;
+  white-space: normal;
 }
 .ccc-footer-error {
   display: inline-flex;
@@ -1477,26 +1498,22 @@ div[data-testid="stVerticalBlock"] {
     margin: 21px 0 11px !important;
 }
 
-/* Keep validation feedback from changing the white card's dimensions.
-   The compact line is drawn in the existing space between field rows. */
+/* Validation notes must take up real space beneath the input.
+   Absolute-positioned errors caused collisions with the next field. */
 .st-key-ccc_main_card [class*="st-key-ccc_field_"] {
     position: relative !important;
 }
 .st-key-ccc_main_card [class*="st-key-ccc_field_"]
 div[data-testid="stElementContainer"]:has(.ccc-field-error) {
-    position: absolute !important;
-    left: 0 !important;
-    right: 0 !important;
-    top: calc(100% + 1px) !important;
-    width: 100% !important;
-    margin: 0 !important;
-    z-index: 2;
-    pointer-events: none;
-}
-.st-key-ccc_main_card .ccc-field-error {
-    font-size: 11px !important;
-    line-height: 1.16 !important;
-    margin: 0 !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    width: auto !important;
+    margin: 3px 0 0 !important;
+    z-index: auto !important;
+    pointer-events: auto !important;
 }
 .st-key-ccc_main_card div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer) {
     min-height: 54px !important;
@@ -1513,30 +1530,425 @@ div[data-testid="stElementContainer"]:has(.ccc-field-error) {
     font-size: 14px !important;
 }
 
+
+/* Result footer: large CCC value at far left; warning never overlays buttons. */
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer) {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: 84px !important; /* reserved even before Predict: no layout jump */
+    gap: 12px !important;
+}
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer)
+> div[data-testid="stColumn"]:first-child {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    flex: 1 1 0% !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    z-index: auto !important;
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+}
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer)
+> div[data-testid="stColumn"]:first-child .stMarkdown,
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer)
+> div[data-testid="stColumn"]:first-child
+div[data-testid="stMarkdownContainer"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    text-align: left !important;
+}
+.st-key-ccc_main_card .ccc-footer-result {
+    box-sizing: border-box !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    min-height: 78px !important;
+    padding: 6px 14px !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 16px !important;
+    text-align: left !important;
+}
+.st-key-ccc_main_card .ccc-footer-result:has(.ccc-result-meta) {
+    width: 100% !important;  /* fill ONLY the left result column */
+}
+.st-key-ccc_main_card .ccc-result-primary {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    flex: 0 0 auto;
+    min-width: 180px;
+    gap: 1px;
+}
+.st-key-ccc_main_card .ccc-footer-result-label {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
+}
+.st-key-ccc_main_card .ccc-footer-result-value {
+    font-size: 42px !important;
+    font-weight: 750 !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+}
+.st-key-ccc_main_card .ccc-footer-result-unit {
+    font-size: 17px !important;
+    font-weight: 550 !important;
+    margin-left: 6px !important;
+}
+.st-key-ccc_main_card .ccc-result-meta {
+    flex: 1 1 0%;
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+}
+.st-key-ccc_main_card .ccc-result-caution {
+    display: block !important;
+    color: #B42318 !important;
+    font-size: 14px !important;
+    font-weight: 550 !important;
+    line-height: 1.32 !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+}
+.st-key-ccc_main_card .ccc-result-method {
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+}
+.st-key-ccc_main_card .ccc-footer-error {
+    font-size: 15px !important;
+    text-align: left !important;
+    max-width: 100% !important;
+}
+
+/* The action buttons keep their original widths and their own columns. */
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer)
+> div[data-testid="stColumn"]:nth-last-child(2) {
+    position: relative !important;
+    flex: 0 0 144px !important;
+    width: 144px !important;
+}
+.st-key-ccc_main_card
+div[data-testid="stHorizontalBlock"]:has(.ccc-action-spacer)
+> div[data-testid="stColumn"]:last-child {
+    position: relative !important;
+    flex: 0 0 204px !important;
+    width: 204px !important;
+}
+
+/* On narrower displays, wrap warning *within its column*, not over buttons. */
+@media (max-width: 1050px) {
+    .st-key-ccc_main_card .ccc-footer-result {
+        gap: 10px !important;
+        padding-inline: 10px !important;
+    }
+    .st-key-ccc_main_card .ccc-result-primary {
+        min-width: 145px;
+    }
+    .st-key-ccc_main_card .ccc-footer-result-value {
+        font-size: 36px !important;
+    }
+    .st-key-ccc_main_card .ccc-result-caution {
+        font-size: 12.5px !important;
+    }
+}
+
+/* Keep the original emphasized Caution text in the result footer. */
+.st-key-ccc_main_card .ccc-result-caution .ccc-caution-prefix {
+    font-size: 20px !important;
+    line-height: 1 !important;
+    font-weight: 700 !important;
+    color: inherit !important;
+}
+
+/* ===============================================================
+   CCC INPUT PANEL — unified type scale and stable, aligned layout.
+   Changes are deliberately limited to the THREE input panels.
+   The Predict CCC footer, model, image and card offset are untouched.
+   =============================================================== */
+.st-key-ccc_main_card {
+    --ccc-panel-font: 18px;
+    --ccc-note-font: 15px;
+}
+
+/* All ordinary visible input-panel text uses precisely 18px:
+   column titles, field names, selected values, placeholders, and
+   the parenthesized Recommended value notes. */
+.st-key-ccc_main_card .ccc-panel-heading,
+.st-key-ccc_main_card div[data-testid="stSelectbox"] label p,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] label p,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] label p em,
+.st-key-ccc_main_card div[data-testid="stSelectbox"] input,
+.st-key-ccc_main_card div[data-testid="stNumberInput"] input,
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"],
+.st-key-ccc_main_card div[data-testid="stSelectbox"] [data-baseweb="select"] :not(svg):not(path),
+.st-key-ccc_main_card div[data-testid="stNumberInput"] [data-baseweb="input"] input {
+    font-size: var(--ccc-panel-font) !important;
+    line-height: 1.30 !important;
+}
+.st-key-ccc_main_card .ccc-panel-heading {
+    font-weight: 650 !important;
+}
+.st-key-ccc_main_card div[data-testid="stNumberInput"] label p em {
+    font-style: normal !important;
+    color: #68798D !important;
+    font-weight: 500 !important;
+    white-space: normal !important;
+}
+
+/* Open dropdown items appear in a portal outside the card. */
+[data-baseweb="popover"] [role="option"],
+[data-baseweb="popover"] [role="option"] :not(svg):not(path) {
+    font-size: 18px !important;
+}
+
+/* The complete range warning has ONE slightly smaller type size,
+   including its "Outside training range" prefix and entire sentence.
+   Required-field feedback follows the same size. */
+.st-key-ccc_main_card .ccc-field-error,
+.st-key-ccc_main_card .ccc-field-error:has(.ccc-range-prefix),
+.st-key-ccc_main_card .ccc-field-error .ccc-range-prefix,
+.st-key-ccc_main_card .ccc-field-note {
+    font-size: var(--ccc-note-font) !important;
+    font-weight: 500 !important;
+    line-height: 1.30 !important;
+    letter-spacing: normal !important;
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+}
+.st-key-ccc_main_card .ccc-field-error .ccc-range-prefix {
+    font-weight: 500 !important;
+}
+/* Keep short warning text directly under its corresponding input.
+   It is in normal document flow and pushes later fields down
+   if it wraps onto two lines. It can never overlay the next label. */
+.st-key-ccc_main_card [class*="st-key-ccc_field_"]
+div[data-testid="stVerticalBlock"] {
+    gap: 3px !important;
+}
+.st-key-ccc_main_card [class*="st-key-ccc_field_"]
+div[data-testid="stElementContainer"]:has(.ccc-field-error) {
+    position: static !important;
+    margin-top: 3px !important;
+}
+.st-key-ccc_main_card .ccc-field-error {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Desktop: all three panels stretch to the SAME height.
+   The 5-field middle column determines that height. In each 4-field
+   side column, space-between distributes the free room into 3 even
+   gaps, so the first and LAST input align with the middle column. */
+@media (min-width: 941px) {
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading) {
+        align-items: stretch !important;
+    }
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading)
+    > div[data-testid="stColumn"] {
+        display: flex !important;
+        flex-direction: column !important;
+        align-self: stretch !important;
+        min-width: 0 !important;
+    }
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading)
+    > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"],
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading)
+    > div[data-testid="stColumn"] > div[data-testid="stVerticalBlockBorderWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        align-self: stretch !important;
+        min-height: 0 !important;
+        height: 100% !important;
+    }
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading)
+    > div[data-testid="stColumn"]:is(:first-child,:last-child)
+    div[data-testid="stVerticalBlock"]:has(.ccc-panel-heading) {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        height: 100% !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        gap: 14px !important;
+    }
+    .st-key-ccc_main_card
+    div[data-testid="stHorizontalBlock"]:has(.ccc-panel-heading)
+    > div[data-testid="stColumn"]:nth-child(2)
+    div[data-testid="stVerticalBlock"]:has(.ccc-panel-heading) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 14px !important;
+    }
+
+    /* The first field stays aligned with the middle column.
+       Auto margins are shared ONLY by subsequent fields:
+       side 4th inputs and middle 5th input finish at one baseline. */
+    .st-key-ccc_main_card .st-key-ccc_field_0_1,
+    .st-key-ccc_main_card .st-key-ccc_field_0_2,
+    .st-key-ccc_main_card .st-key-ccc_field_0_3,
+    .st-key-ccc_main_card .st-key-ccc_field_1_1,
+    .st-key-ccc_main_card .st-key-ccc_field_1_2,
+    .st-key-ccc_main_card .st-key-ccc_field_1_3,
+    .st-key-ccc_main_card .st-key-ccc_field_1_4,
+    .st-key-ccc_main_card .st-key-ccc_field_2_1,
+    .st-key-ccc_main_card .st-key-ccc_field_2_2,
+    .st-key-ccc_main_card .st-key-ccc_field_2_3 {
+        margin-top: auto !important;
+    }
+}
+
+/* Small screens use natural vertical flow instead of alignment pressure. */
+@media (max-width: 940px) {
+    .st-key-ccc_main_card
+    div[data-testid="stColumn"]:has(.ccc-panel-heading)
+    div[data-testid="stVerticalBlock"]:has(.ccc-panel-heading) {
+        justify-content: flex-start !important;
+        height: auto !important;
+    }
+}
+
+/* ===============================================================
+   FINAL FIX — no hidden Predict CCC result after validation.
+   1) Each input ALWAYS reserves the same feedback space.
+   2) The outer Streamlit page (not the card) can be scrolled.
+   3) Background stays fixed while the page is scrolled.
+   4) Original 365px initial offset, font sizes and footer stay.
+   =============================================================== */
+
+/* The field's Markdown slot is present even before Predict is clicked. */
+.st-key-ccc_main_card .ccc-feedback-slot {
+    box-sizing: border-box !important;
+    display: block !important;
+    min-height: 43px !important;
+    padding: 2px 0 0 !important;
+    overflow: visible !important;
+}
+.st-key-ccc_main_card .ccc-feedback-slot .ccc-field-error,
+.st-key-ccc_main_card .ccc-feedback-slot .ccc-field-note {
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 15px !important;
+    line-height: 1.30 !important;
+    font-weight: 500 !important;
+    white-space: normal !important;
+}
+.st-key-ccc_main_card .ccc-feedback-slot .ccc-range-prefix {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    font-weight: inherit !important;
+}
+
+/* Never position the helper text over its following input. */
+.st-key-ccc_main_card [class*="st-key-ccc_field_"]
+div[data-testid="stElementContainer"]:has(.ccc-feedback-slot) {
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    margin: 0 !important;
+}
+.st-key-ccc_main_card [class*="st-key-ccc_field_"]
+div[data-testid="stVerticalBlock"] {
+    gap: 3px !important;
+}
+
+/* Allow scrolling on the OUTER right-hand side of the page.
+   Previously the app locked the scroll container with overflow:hidden. */
+[data-testid="stMain"] {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: auto !important;
+    scrollbar-width: auto !important;
+    scroll-behavior: auto !important;
+}
+[data-testid="stMain"] .block-container {
+    padding-top: 0 !important;
+    padding-bottom: 40px !important;
+    min-height: 100dvh !important;
+}
+
+/* A fixed-position card cannot reveal its clipped footer through outer
+   page scrolling. Keep the SAME initial 365px offset but return the card
+   to document flow so scrolling reveals the prediction/results area.
+   Neither the white card nor its fields gets an internal scrollbar. */
+.st-key-ccc_main_card {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    transform: scale(0.88) !important;
+    transform-origin: top center !important;
+    width: calc(100% - 44px) !important;
+    max-width: 1436px !important;
+    margin: 365px auto 45px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    overflow-y: visible !important;
+    overflow-x: visible !important;
+}
+
+/* Retain the SAME original responsive scales. Their values do not change
+   when warning messages appear. */
+@media (max-height: 880px) {
+    .st-key-ccc_main_card { transform: scale(0.75) !important; }
+}
+@media (max-height: 740px) {
+    .st-key-ccc_main_card { transform: scale(0.56) !important; }
+}
+@media (max-height: 620px) {
+    .st-key-ccc_main_card { transform: scale(0.38) !important; }
+}
+@media (max-width: 940px) {
+    .st-key-ccc_main_card {
+        width: calc(100% - 28px) !important;
+        margin-top: 120px !important;
+    }
+    .st-key-ccc_main_card .ccc-feedback-slot {
+        min-height: 52px !important;
+    }
+}
+
+/* Add a little room after the card for the footer and pointer access. */
+[data-testid="stMain"] .block-container::after {
+    content: "";
+    display: block;
+    height: 38px;
+}
+
 /* Do not rescale this card when Predict CCC adds field warnings. */
 
 
-/* Fit smaller laptop windows without changing the 350px top position. */
-@media (max-height: 880px) {
-    .st-key-ccc_main_card {
-        transform: translateX(-50%) scale(0.75) !important;
-    }
-    
-}
-@media (max-height: 740px) {
-    .st-key-ccc_main_card {
-        transform: translateX(-50%) scale(0.56) !important;
-    }
-    
-}
-@media (max-height: 620px) {
-    .st-key-ccc_main_card {
-        transform: translateX(-50%) scale(0.38) !important;
-    }
-    
-}
-
-
+/* Height-dependent scaling is defined above in FINAL FIX. */
 
 </style>
 """,
@@ -1559,7 +1971,7 @@ if BACKGROUND_PATH.is_file():
     background-size: 112% auto, 100% 100% !important;
     background-position: center top, center top !important;
     background-repeat: no-repeat, no-repeat !important;
-    background-attachment: local, local !important;
+    background-attachment: fixed, fixed !important;
 }}
 </style>
 """,
